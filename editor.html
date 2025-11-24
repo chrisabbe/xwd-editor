@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Crossword Editor</title>
+
+<style>
+  :root{
+    --teal:#008080;
+    --gold:#d8c178;
+    --bg:#f7f7f7;
+    --panel:#ffffff;
+    --ink:#222;
+    --line:#9a9a9a;
+    --muted:#666;
+  }
+  body{
+    font-family: Arial, sans-serif;
+    margin:0; background:var(--bg); color:var(--ink);
+  }
+  header{
+    background:var(--teal); color:#fff; text-align:center;
+    font-weight:700; font-size:22px; padding:14px 8px;
+  }
+  .wrap{ max-width:1050px; margin:0 auto; padding:10px; }
+
+  .row{
+    display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0;
+  }
+  label{ font-size:14px; font-weight:700; color:#333; }
+  input[type="text"], input[type="number"], textarea{
+    font-size:14px; padding:8px; border:1px solid #bbb; border-radius:8px; background:#fff;
+  }
+  input[type="number"]{ width:76px; }
+  textarea{ width:100%; min-height:110px; resize:vertical; font-family:monospace; font-size:12.5px; }
+
+  button{
+    background:var(--teal); color:#fff; border:none; border-radius:8px;
+    padding:8px 12px; font-weight:700; font-size:14px;
+  }
+  button.secondary{
+    background:#fff; color:var(--teal); border:1px solid var(--teal);
+  }
+  button:active{ transform:translateY(1px); }
+
+  .modebar button{ padding:7px 10px; }
+  .modebar button.active{ background:#006767; }
+  .small{ font-size:12px; color:var(--muted); font-style:italic; }
+
+  /* Layout: grid on top, clues underneath */
+  .gridwrap{
+    margin-top:6px;
+    background:var(--panel);
+    border:1px solid #ddd; border-radius:10px; padding:8px;
+  }
+  .grid-scroller{
+    display:flex; justify-content:center;
+    overflow-x:auto; overflow-y:visible;
+    position:relative; z-index:1;
+    -webkit-overflow-scrolling: touch;
+  }
+  table{ border-collapse:collapse; user-select:none; }
+  td{
+    width:28px; height:28px; border:1px solid var(--line);
+    text-align:center; vertical-align:middle; position:relative;
+    font-weight:700; font-size:16px; background:#fff;
+  }
+  @media (max-width:600px){ td{ width:24px; height:24px; font-size:14px; } }
+  @media (max-width:420px){ td{ width:20px; height:20px; font-size:13px; } }
+
+  td.block{ background:var(--gold); }
+
+  .num{
+    position:absolute; top:1px; left:2px;
+    font-size:9px; font-weight:700; color:#111;
+  }
+  .draftLetter{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:inherit; color:#111;
+  }
+  .solLetter{
+    position:absolute; bottom:1px; right:2px; font-size:9px; color:#444; font-weight:700;
+  }
+
+  .cluesWrap{
+    margin-top:10px;
+    display:grid; grid-template-columns:1fr 1fr; gap:10px;
+  }
+  @media (max-width:800px){ .cluesWrap{ grid-template-columns:1fr; } }
+
+  .cluebox{
+    background:var(--panel);
+    border:1px solid #ddd; border-radius:10px; padding:8px;
+    position:relative; z-index:5; /* ensure always tappable */
+    pointer-events:auto;
+  }
+  .cluebox h3{ margin:4px 0 8px; color:var(--teal); }
+
+  .cluerow{
+    display:flex; gap:6px; align-items:center; margin:4px 0;
+  }
+  .cluerow span{
+    width:42px; font-weight:700; font-size:14px;
+  }
+  .cluerow input{
+    flex:1; min-width:0;
+  }
+
+  .toast{
+    position:fixed; left:50%; transform:translateX(-50%);
+    bottom:16px; background:var(--teal); color:#fff;
+    padding:8px 12px; border-radius:10px; font-size:13px;
+    opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+
+<body>
+<header>CROSSWORD EDITOR</header>
+
+<div class="wrap">
+
+  <div class="row">
+    <label>Title</label>
+    <input id="title" type="text" value="Daily Crossword" style="flex:1;min-width:200px">
+    <label>Subtitle</label>
+    <input id="subtitle" type="text" value="" style="flex:2;min-width:240px">
+  </div>
+
+  <div class="row">
+    <label>Rows</label><input id="rows" type="number" min="5" max="25" value="15">
+    <label>Cols</label><input id="cols" type="number" min="5" max="25" value="15">
+    <button onclick="resizeGrid()">Resize Grid</button>
+    <button class="secondary" onclick="autoNumber()">Auto-number Grid</button>
+    <button class="secondary" onclick="refreshClueInputs()">Refresh Clue List</button>
+  </div>
+
+  <div class="row modebar">
+    <button id="mBlocks" class="active" onclick="setMode('blocks')">Blocks</button>
+    <button id="mNumbers" onclick="setMode('numbers')">Numbers</button>
+    <button id="mDraft" onclick="setMode('draft')">Draft Letters</button>
+    <button id="mSolution" onclick="setMode('solution')">Solution Letters</button>
+    <span class="small">Tap squares to edit in the selected mode.</span>
+  </div>
+
+  <div class="row">
+    <button class="secondary" onclick="exportJSON()">Export Puzzle + Solution</button>
+    <button class="secondary" onclick="downloadJSON()">Download JSON</button>
+    <button class="secondary" onclick="clearEditor()">Clear Editor</button>
+
+    <input id="importFile" type="file" accept=".json,application/json" style="display:none" onchange="importFromFile(event)">
+    <button onclick="document.getElementById('importFile').click()">Import JSON File</button>
+    <button class="secondary" onclick="importFromPaste()">Import JSON (Paste)</button>
+  </div>
+
+  <div class="gridwrap">
+    <div class="grid-scroller">
+      <table id="grid"></table>
+    </div>
+  </div>
+
+  <div class="cluesWrap">
+    <div class="cluebox">
+      <h3>Across Clues</h3>
+      <div id="acrossClues"></div>
+    </div>
+    <div class="cluebox">
+      <h3>Down Clues</h3>
+      <div id="downClues"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <label style="width:100%;">Paste JSON here (for Import Paste) / Export output below:</label>
+    <textarea id="jsonBox" placeholder="Paste puzzle.json here, or click Export to generate JSON."></textarea>
+  </div>
+</div>
+
+<div id="toast" class="toast">Saved draft</div>
+
+<script>
+/* =========================
+   STATE
+========================= */
+let mode="blocks";
+let R=15, C=15;
+
+let grid=[], numbers=[], draft=[], solution=[];
+let across={}, down={};
+
+const DRAFT_KEY="xwd-editor-draft-v2";
+
+/* =========================
+   INIT
+========================= */
+initEmpty(R,C);
+renderAll();
+restoreDraftIfExists();
+
+// autosave title/subtitle too
+title.addEventListener("input", ()=>saveDraft(true));
+subtitle.addEventListener("input", ()=>saveDraft(true));
+
+function setMode(m){
+  mode=m;
+  ["mBlocks","mNumbers","mDraft","mSolution"].forEach(id=>document.getElementById(id).classList.remove("active"));
+  if(m==="blocks") mBlocks.classList.add("active");
+  if(m==="numbers") mNumbers.classList.add("active");
+  if(m==="draft") mDraft.classList.add("active");
+  if(m==="solution") mSolution.classList.add("active");
+}
+
+function initEmpty(rows, cols){
+  R=rows; C=cols;
+  grid=Array.from({length:R},()=>Array.from({length:C},()=> ""));
+  numbers=Array.from({length:R},()=>Array.from({length:C},()=> 0));
+  draft=Array.from({length:R},()=>Array.from({length:C},()=> ""));
+  solution=Array.from({length:R},()=>Array.from({length:C},()=> ""));
+  across={}; down={};
+}
+
+function resizeGrid(){
+  const nr=+rows.value, nc=+cols.value;
+  initEmpty(nr,nc);
+  renderAll();
+  saveDraft();
+}
+
+function clearEditor(){
+  initEmpty(R,C);
+  renderAll();
+  saveDraft();
+}
+
+/* =========================
+   RENDER
+========================= */
+function renderAll(){
+  renderGrid();
+  refreshClueInputs();
+}
+
+function renderGrid(){
+  const tbl=document.getElementById("grid");
+  tbl.innerHTML="";
+  for(let r=0;r<R;r++){
+    const tr=document.createElement("tr");
+    for(let c=0;c<C;c++){
+      const td=document.createElement("td");
+      if(grid[r][c]==="#") td.classList.add("block");
+
+      if(numbers[r][c]>0){
+        const n=document.createElement("div");
+        n.className="num"; n.textContent=numbers[r][c];
+        td.appendChild(n);
+      }
+      if(grid[r][c]!=="#"){
+        const d=document.createElement("div");
+        d.className="draftLetter";
+        d.textContent=draft[r][c]||"";
+        td.appendChild(d);
+
+        if(solution[r][c]){
+          const s=document.createElement("div");
+          s.className="solLetter";
+          s.textContent=solution[r][c];
+          td.appendChild(s);
+        }
+      }
+
+      td.addEventListener("click",()=>onCellClick(r,c));
+      tr.appendChild(td);
+    }
+    tbl.appendChild(tr);
+  }
+}
+
+function onCellClick(r,c){
+  if(mode==="blocks"){
+    if(grid[r][c]==="#"){
+      grid[r][c]=""; numbers[r][c]=0; draft[r][c]=""; solution[r][c]="";
+    }else{
+      grid[r][c]="#"; numbers[r][c]=0; draft[r][c]=""; solution[r][c]="";
+    }
+  }
+
+  if(mode==="numbers"){
+    if(grid[r][c]==="#") return;
+    const current=numbers[r][c]||0;
+    const val=prompt("Enter number (0 to clear):", current);
+    if(val===null) return;
+    numbers[r][c]=Math.max(0, parseInt(val,10)||0);
+  }
+
+  if(mode==="draft"){
+    if(grid[r][c]==="#") return;
+    const current=draft[r][c]||"";
+    const val=prompt("Draft letter (A-Z) or blank:", current);
+    if(val===null) return;
+    draft[r][c]=(val.trim().toUpperCase().slice(0,1).match(/[A-Z]/)||[""])[0];
+  }
+
+  if(mode==="solution"){
+    if(grid[r][c]==="#") return;
+    const current=solution[r][c]||"";
+    const val=prompt("Solution letter (A-Z) or blank:", current);
+    if(val===null) return;
+    solution[r][c]=(val.trim().toUpperCase().slice(0,1).match(/[A-Z]/)||[""])[0];
+  }
+
+  renderAll();
+  saveDraft();
+}
+
+/* =========================
+   AUTO NUMBER
+========================= */
+function autoNumber(){
+  numbers=Array.from({length:R},()=>Array.from({length:C},()=>0));
+  let n=1;
+  for(let r=0;r<R;r++){
+    for(let c=0;c<C;c++){
+      if(grid[r][c]==="#") continue;
+      const startsAcross=(c===0||grid[r][c-1]==="#")&&(c+1<C&&grid[r][c+1]!=="#");
+      const startsDown=(r===0||grid[r-1][c]==="#")&&(r+1<R&&grid[r+1][c]!=="#");
+      if(startsAcross||startsDown) numbers[r][c]=n++;
+    }
+  }
+  renderAll();
+  saveDraft();
+}
+
+/* =========================
+   CLUE INPUTS
+========================= */
+function findClueStarts(){
+  const acrossStarts=[], downStarts=[];
+  for(let r=0;r<R;r++){
+    for(let c=0;c<C;c++){
+      if(grid[r][c]==="#") continue;
+      const num=numbers[r][c];
+      if(!num) continue;
+
+      const startsAcross=(c===0||grid[r][c-1]==="#")&&(c+1<C&&grid[r][c+1]!=="#");
+      const startsDown=(r===0||grid[r-1][c]==="#")&&(r+1<R&&grid[r+1][c]!=="#");
+      if(startsAcross) acrossStarts.push(num);
+      if(startsDown) downStarts.push(num);
+    }
+  }
+  acrossStarts.sort((a,b)=>a-b);
+  downStarts.sort((a,b)=>a-b);
+  return {acrossStarts, downStarts};
+}
+
+function refreshClueInputs(){
+  const {acrossStarts, downStarts}=findClueStarts();
+
+  const aDiv=acrossClues, dDiv=downClues;
+  aDiv.innerHTML=""; dDiv.innerHTML="";
+
+  const oldA={...across}, oldD={...down};
+  across={}; down={};
+
+  acrossStarts.forEach(num=>{
+    across[num]=oldA[num]||"";
+    const row=document.createElement("div");
+    row.className="cluerow";
+    const label=document.createElement("span");
+    label.textContent=num;
+    const inp=document.createElement("input");
+    inp.value=across[num];
+    inp.addEventListener("input",()=>{across[num]=inp.value; saveDraft(true);});
+    row.append(label, inp);
+    aDiv.appendChild(row);
+  });
+
+  downStarts.forEach(num=>{
+    down[num]=oldD[num]||"";
+    const row=document.createElement("div");
+    row.className="cluerow";
+    const label=document.createElement("span");
+    label.textContent=num;
+    const inp=document.createElement("input");
+    inp.value=down[num];
+    inp.addEventListener("input",()=>{down[num]=inp.value; saveDraft(true);});
+    row.append(label, inp);
+    dDiv.appendChild(row);
+  });
+}
+
+/* =========================
+   EXPORT / DOWNLOAD
+========================= */
+function exportJSON(){
+  const data={
+    title:(title.value||"Daily Crossword"),
+    subtitle:(subtitle.value||""),
+    rows:R, cols:C,
+    grid:grid.map(row=>row.map(v=>v==="#"?"#":"")),
+    numbers:numbers.map(row=>row.map(v=>v||0)),
+    across:{...across},
+    down:{...down},
+    solution:solution.map((row,r)=>row.map((v,c)=>{
+      if(grid[r][c]==="#") return "#";
+      return (v||"");
+    }))
+  };
+  jsonBox.value=JSON.stringify(data,null,2);
+  showToast("Exported JSON");
+  saveDraft(true);
+}
+
+function downloadJSON(){
+  exportJSON();
+  const text=jsonBox.value;
+  const blob=new Blob([text],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download="puzzle.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* =========================
+   IMPORT
+========================= */
+function importFromPaste(){
+  const txt=jsonBox.value.trim();
+  if(!txt){ alert("Paste puzzle.json into the box first."); return; }
+  try{ applyImported(JSON.parse(txt)); showToast("Imported JSON"); }
+  catch(e){ alert("That doesn't look like valid JSON."); }
+}
+
+function importFromFile(ev){
+  const file=ev.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{ applyImported(JSON.parse(reader.result)); showToast("Imported JSON file"); }
+    catch(e){ alert("JSON file couldn't be parsed."); }
+  };
+  reader.readAsText(file);
+}
+
+function applyImported(data){
+  if(!data.rows||!data.cols||!data.grid||!data.numbers){
+    alert("Missing required fields in JSON.");
+    return;
+  }
+  title.value=data.title||"Daily Crossword";
+  subtitle.value=data.subtitle||"";
+  rows.value=data.rows; cols.value=data.cols;
+
+  R=data.rows; C=data.cols;
+  grid=data.grid.map(row=>row.map(v=>v==="#"?"#":""));
+  numbers=data.numbers.map(row=>row.map(v=>+v||0));
+
+  draft=Array.from({length:R},()=>Array.from({length:C},()=> ""));
+  solution=Array.from({length:R},()=>Array.from({length:C},()=> ""));
+  if(Array.isArray(data.solution)){
+    for(let r=0;r<R;r++){
+      for(let c=0;c<C;c++){
+        if(grid[r][c]==="#") continue;
+        const v=data.solution[r]?.[c]||"";
+        solution[r][c]=String(v).toUpperCase().slice(0,1).match(/[A-Z]/)?.[0]||"";
+      }
+    }
+  }
+
+  across={...(data.across||{})};
+  down={...(data.down||{})};
+
+  renderAll();
+  saveDraft(true);
+}
+
+/* =========================
+   EDITOR AUTOSAVE
+========================= */
+function saveDraft(silent=false){
+  const obj={
+    title:title.value||"",
+    subtitle:subtitle.value||"",
+    rows:R, cols:C,
+    grid, numbers, draft, solution,
+    across, down
+  };
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(obj));
+  if(!silent) showToast("Saved draft");
+}
+
+function restoreDraftIfExists(){
+  const raw=localStorage.getItem(DRAFT_KEY);
+  if(!raw) return;
+  try{
+    const d=JSON.parse(raw);
+    if(!d.grid||!d.numbers) return;
+
+    title.value=d.title||"Daily Crossword";
+    subtitle.value=d.subtitle||"";
+    rows.value=d.rows||15; cols.value=d.cols||15;
+    R=d.rows; C=d.cols;
+
+    grid=d.grid; numbers=d.numbers;
+    draft=d.draft||draft; solution=d.solution||solution;
+    across=d.across||{}; down=d.down||{};
+
+    renderAll();
+    showToast("Restored draft");
+  }catch(e){}
+}
+
+/* =========================
+   TOAST
+========================= */
+let toastTimer=null;
+function showToast(msg){
+  toast.textContent=msg;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toast.classList.remove("show"),1800);
+}
+</script>
+</body>
+</html>

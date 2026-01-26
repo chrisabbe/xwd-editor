@@ -438,40 +438,54 @@ function importFromFile(ev){
 }
 
 function applyImported(data){
-  if(!data.rows||!data.cols||!data.grid||!data.numbers){
+  // Normalize v0 → v1 if needed
+  const p = data.meta ? data : {
+    meta: { title: data.title, subtitle: data.subtitle },
+    size: { rows: data.rows, cols: data.cols },
+    grid: data.grid,
+    numbers: data.numbers,
+    clues: {
+      across: data.across || {},
+      down: data.down || {}
+    },
+    solution: data.solution
+  };
+
+  if(!p.size?.rows || !p.size?.cols || !p.grid || !p.numbers){
     alert("Missing required fields in JSON.");
     return;
   }
 
-  document.getElementById("title").value = data.title || "Daily Crossword";
-  document.getElementById("subtitle").value = data.subtitle || "";
-  document.getElementById("rows").value=data.rows;
-  document.getElementById("cols").value=data.cols;
+  document.getElementById("title").value = p.meta?.title || "Daily Crossword";
+  document.getElementById("subtitle").value = p.meta?.subtitle || "";
+  document.getElementById("rows").value = p.size.rows;
+  document.getElementById("cols").value = p.size.cols;
 
-  R=data.rows; C=data.cols;
+  R = p.size.rows;
+  C = p.size.cols;
 
-  grid = data.grid.map(row=>row.map(v=>v==="#"?"#":""));
-  numbers = data.numbers.map(row=>row.map(v=>+v||0));
+  grid = p.grid.map(row => row.map(v => v === "#" ? "#" : ""));
+  numbers = p.numbers.map(row => row.map(v => +v || 0));
 
   solution = Array.from({length:R},()=>Array.from({length:C},()=> ""));
-  if(Array.isArray(data.solution)){
+  if(Array.isArray(p.solution)){
     for(let r=0;r<R;r++){
       for(let c=0;c<C;c++){
         if(grid[r][c]==="#") continue;
-        const v=data.solution[r]?.[c]||"";
+        const v=p.solution[r]?.[c]||"";
         solution[r][c]=(v==="#"?"":String(v).toUpperCase().slice(0,1));
       }
     }
   }
 
   draft = Array.from({length:R},()=>Array.from({length:C},()=> ""));
-
-  across = {...(data.across||{})};
-  down   = {...(data.down||{})};
+  across = { ...(p.clues?.across || {}) };
+  down   = { ...(p.clues?.down || {}) };
 
   renderAll();
   saveDraft(true);
 }
+
 
 /* --------- AUTO-SAVE DRAFT --------- */
 function saveDraft(silent=false){

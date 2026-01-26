@@ -370,25 +370,32 @@ function exportJSON(){
   const titleVal = document.getElementById("title").value || "Daily Crossword";
   const subtitleVal = document.getElementById("subtitle").value || "";
 
-  const data={
-    title:titleVal,
-    subtitle:subtitleVal,
-    rows:R, cols:C,
-    grid:grid.map(row=>row.map(v=>v==="#"?"#":"")),
-    numbers:numbers.map(row=>row.map(v=>v||0)),
-    across:{...across},
-    down:{...down},
-    solution:solution.map((row,r)=>row.map((v,c)=>{
-      if(grid[r][c]==="#") return "#";
-      return (v||"");
-    }))
+  const data = {
+    meta: {
+      title: titleVal,
+      subtitle: subtitleVal
+    },
+    size: {
+      rows: R,
+      cols: C
+    },
+    grid: grid.map(row => row.map(v => v === "#" ? "#" : ".")),
+    numbers: numbers.map(row => row.map(v => v || 0)),
+    clues: {
+      across: { ...across },
+      down: { ...down }
+    },
+    solution: solution.map((row, r) =>
+      row.map((v, c) => grid[r][c] === "#" ? "#" : (v || ""))
+    )
   };
 
-  const box=document.getElementById("jsonBox");
-  box.value=JSON.stringify(data,null,2);
-  showToast("Exported JSON");
+  const box = document.getElementById("jsonBox");
+  box.value = JSON.stringify(data, null, 2);
+  showToast("Exported JSON (v1)");
   saveDraft(true);
 }
+
 
 function downloadJSON(){
   exportJSON();
